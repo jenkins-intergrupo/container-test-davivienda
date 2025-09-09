@@ -1,34 +1,27 @@
-name: ACR Remote Build & Deploy to Azure Container Apps
+name: Deploy existing ACR image to Azure Container Apps
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'ACR image tag to deploy (e.g. latest, 1.0.0)'
+        required: true
+        default: 'latest'
 
 permissions:
   id-token: write
   contents: read
 
 env:
-  # ==== Ajusta estos valores a tu entorno ====
-  RG: az-jrc-test                     # Resource Group donde vive el Container App
-  ACA_APP: aztcsdavikk-2              # Nombre del Container App
-  ACR_NAME: acrtestfortcs             # Nombre del ACR (sin .azurecr.io)
-  ACR_LOGIN_SERVER: acrtestfortcs.azurecr.io   # Login server del ACR
-  IMAGE_REPO: aztcsdavikk-2           # Repo dentro del ACR para tu imagen
-  IMAGE_TAG: ${{ github.sha }}        # Tag de la imagen (commit SHA)
-  DOCKERFILE_PATH: ./Dockerfile       # Ruta al Dockerfile (ajusta si no está en la raíz)
-  CONTEXT_PATH: .                     # Contexto de build (directorio a enviar al build)
-  # ===========================================
+  RG: az-jrc-test                          # Resource Group del Container App
+  ACA_APP: aztcsdavikk-2                   # Nombre del Container App
+  ACR_LOGIN_SERVER: acrtestfortcs.azurecr.io   # Login server de TU ACR (verifícalo)
+  IMAGE_REPO: demo/hello-world             # Repo/imagen ya existente en el ACR
 
 jobs:
-  build-push-deploy:
+  deploy-only:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
@@ -36,28 +29,15 @@ jobs:
           tenant-id: ${{ secrets.AZTCSDAVIKK2_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZTCSDAVIKK2_AZURE_SUBSCRIPTION_ID }}
 
-      # Build remoto en ACR (empuja la imagen directo al registro)
-      - name: ACR Remote Build
-        run: |
-          IMAGE=${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
-          az acr build \
-            -r ${{ env.ACR_NAME }} \
-            -t "$IMAGE" \
-            -f "${{ env.DOCKERFILE_PATH }}" \
-            "${{ env.CONTEXT_PATH }}"
-
-      # Despliegue a Azure Container Apps (usando identidad del sistema para leer del ACR)
-      - name: Deploy to Azure Container Apps
+      - name: Deploy to Azure Container Apps (using existing ACR image)
         uses: azure/container-apps-deploy-action@v2
         with:
           resourceGroup: ${{ env.RG }}
           appName: ${{ env.ACA_APP }}
-          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}:${{ env.IMAGE_TAG }}
+          imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
           registryUrl: ${{ env.ACR_LOGIN_SERVER }}
+          # Requiere que el Container App tenga identidad del sistema + rol AcrPull en el ACR
           registryIdentity: system
-          # Descomenta y ajusta si tu contenedor expone un puerto diferente:
+          # Descomenta si tu contenedor expone otro puerto o quieres ingreso público:
           # targetPort: 80
           # ingress: external
-
-
-
