@@ -1,4 +1,4 @@
-name: Deploy existing image from ACR to Azure Container Apps
+name: Deploy Nginx from ACR to Azure Container Apps
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       image_tag:
         description: 'ACR image tag to deploy'
         required: true
-        default: 'latest'
+        default: '1.27-alpine'   # tag que importaste al ACR
 
 permissions:
   id-token: write
@@ -15,8 +15,8 @@ permissions:
 env:
   RG: az-jrc-test
   ACA_APP: aztcsdavikk-2
-  ACR_LOGIN_SERVER: acrtestfortcs-auc8eaa4eea7a2dn.azurecr.io   # <-- copia EXACTO del portal
-  IMAGE_REPO: demo/hello-world
+  ACR_LOGIN_SERVER: acrtestfortcs-auc8eaa4eea7a2dn.azurecr.io   # login server EXACTO
+  IMAGE_REPO: demo/nginx                                        # repo en tu ACR
 
 jobs:
   deploy:
@@ -29,6 +29,15 @@ jobs:
           tenant-id: ${{ secrets.AZTCSDAVIKK2_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZTCSDAVIKK2_AZURE_SUBSCRIPTION_ID }}
 
+      # Enlaza el ACR al Container App usando la identidad del sistema (idempotente)
+      - name: Link ACR to Container App
+        run: |
+          az containerapp registry set \
+            -g ${{ env.RG }} -n ${{ env.ACA_APP }} \
+            --server ${{ env.ACR_LOGIN_SERVER }} \
+            --identity system
+
+      # Despliegue de la imagen existente en ACR + configuración de ingress/puerto
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
@@ -36,7 +45,21 @@ jobs:
           containerAppName: ${{ env.ACA_APP }}
           imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
           registryUrl: ${{ env.ACR_LOGIN_SERVER }}
-          # No pongas registryIdentity aquí; ya debe estar configurado en el Container App
-          # targetPort: 80
-          # ingress: external
+          ingress: external          # endpoint público
+          targetPort: 80             # Nginx escucha en 80
+
+      # (Opcional pero recomendado) evita cold start
+      - name: Ensure min replicas = 1
+        run: |
+          az containerapp update \
+            -g ${{ env.RG }} -n ${{ env.ACA_APP }} \
+            --min-replicas 1
+
+      # (Opcional) imprime el FQDN para probar rápido
+      - name: Show app FQDN
+        run: |
+          FQDN=$(az containerapp show -g ${{ env.RG }} -n ${{ env.ACA_APP }} --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "FQDN: https://$FQDN"
+
+
 
