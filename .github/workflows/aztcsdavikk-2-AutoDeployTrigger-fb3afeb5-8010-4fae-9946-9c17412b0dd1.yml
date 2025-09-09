@@ -1,10 +1,10 @@
-name: Deploy existing ACR image to Azure Container Apps
+name: Deploy existing image from ACR to Azure Container Apps
 
 on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'ACR image tag to deploy (e.g. latest, 1.0.0)'
+        description: 'ACR image tag to deploy'
         required: true
         default: 'latest'
 
@@ -13,13 +13,13 @@ permissions:
   contents: read
 
 env:
-  RG: az-jrc-test                          # Resource Group del Container App
-  ACA_APP: aztcsdavikk-2                   # Nombre del Container App
-  ACR_LOGIN_SERVER: acrtestfortcs.azurecr.io   # Login server de TU ACR (verifícalo)
-  IMAGE_REPO: demo/hello-world             # Repo/imagen ya existente en el ACR
+  RG: az-jrc-test
+  ACA_APP: aztcsdavikk-2
+  ACR_LOGIN_SERVER: acrtestfortcs-auc8eaa4eea7a2dn.azurecr.io   # <-- copia EXACTO del portal
+  IMAGE_REPO: demo/hello-world
 
 jobs:
-  deploy-only:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Azure login (OIDC)
@@ -29,15 +29,14 @@ jobs:
           tenant-id: ${{ secrets.AZTCSDAVIKK2_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZTCSDAVIKK2_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy to Azure Container Apps (using existing ACR image)
+      - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
           resourceGroup: ${{ env.RG }}
-          appName: ${{ env.ACA_APP }}
+          containerAppName: ${{ env.ACA_APP }}
           imageToDeploy: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_REPO }}:${{ inputs.image_tag }}
           registryUrl: ${{ env.ACR_LOGIN_SERVER }}
-          # Requiere que el Container App tenga identidad del sistema + rol AcrPull en el ACR
-          registryIdentity: system
-          # Descomenta si tu contenedor expone otro puerto o quieres ingreso público:
+          # No pongas registryIdentity aquí; ya debe estar configurado en el Container App
           # targetPort: 80
           # ingress: external
+
